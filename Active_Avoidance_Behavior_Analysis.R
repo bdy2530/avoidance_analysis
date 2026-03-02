@@ -31,13 +31,14 @@ Operant_Data <- Operant_Data %>%
 
 col.pal.Latency = setNames(object = c("#2278bd", "#f66723"),
                        nm =     c("total.avoid.latency", "total.escape.latency"))
+
 sem2 <-function(x){ tribble( #try implementing with stat_summary as before in commented section
   ~ymin,                           ~y,               ~ymax,
   mean(x)-sd(x)/sqrt(length(x)), mean(x), mean(x)+sd(x)/sqrt(length(x))
 )
 }
 
-Operant_Data <- Operant_Data %>% filter(Subject < 1000)
+# Operant_Data <- Operant_Data %>% filter(Subject < 1000)
 
 
 #### percent avoided -----
@@ -68,11 +69,6 @@ plot_data <- bind_rows(perc_avoid_ctrl, perc_avoid_all_sex) %>%
 
 ggplot(plot_data, aes(x = Paradigm.Day, y = perc_avoid)) +
   geom_line(aes(group = Subject), alpha = 0.6) +
-  geom_vline(xintercept = 7, linewidth = 2.5, color = "pink2") +
-  geom_vline(xintercept = 8, linewidth = 2.5, color = "lightblue2") +
-  geom_vline(xintercept = 10, linewidth = 2.5, color = "yellow3") +
-  geom_vline(xintercept = 11, linewidth = 2.5, color = "lightgreen") +
-  geom_vline(xintercept = 12, linewidth = 2.5, color = "orchid4") +
   geom_path(stat = "summary", fun.data = sem2,            
             linewidth = 1.5, color = "#FF0000") +
   # facet_grid(rows = vars(Sex)) +                         
@@ -85,7 +81,7 @@ ggplot(plot_data, aes(x = Paradigm.Day, y = perc_avoid)) +
     axis.text = element_text(size = 12)
   ) +
   # scale_x_continuous(breaks = 1:7, limits = c(1,7)) +
-  scale_x_continuous(breaks = 1:12, limits = c(1,12))+
+  scale_x_continuous(breaks = 1:7, limits = c(1,7))+
   scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 20))
 
 
@@ -227,3 +223,4 @@ ggplot(plot_avoid_perc_bin_complete, aes(x = factor(Paradigm.Day), y = perc_avoi
   labs(x = "Day", y = "Percentage Avoided", fill = "Day", title = "Percentage Avoided by Day (Binned)") + scale_y_continuous(limits = c(0, 100))
 
 
+write.csv(prism_wide, "prism_latency_avdesc.csv", na = "")

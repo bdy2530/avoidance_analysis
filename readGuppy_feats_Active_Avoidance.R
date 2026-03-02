@@ -7,25 +7,17 @@ library(progress)
 library(googlesheets4)
 library(glue)
 library(lubridate)
-source("C:/Users/bdy2530/Desktop/Analysis/functionsPIT_New.R")
+source("C:/Users/bdy2530/Desktop/avoidance_analysis/functionsPIT_New.R")
 gs4_deauth()
 
 # Load Data and helper functions ------------------------------------------
 #operant data not in use here...
 Experiment <- "Active.Avoidance"
-# setup_metadata_link <- "https://docs.google.com/spreadsheets/d/15h8O_2W2hGp28pBgIBfIG3BayWDFxUFyNmIU3BRs2Is/edit?usp=sharing"
-# setup_metadata <- read_sheet(setup_metadata_link) %>% as_tibble() %>% 
-#   mutate(Subject = as.character(Subject), 
-#          Subject = case_when(nchar(Subject) == 2 ~ str_c("0", Subject),
-#                              TRUE ~ Subject)) %>% 
-#   filter(DOB >= ymd("2023-01-01")) %>% 
-#   select(Subject, Group, Sex)
-# Operant_Data <- readRDS(file = glue("{Experiment}_Operant_Data.Rds")) %>% left_join(setup_metadata)
 
 synapse_eval_trim <- readRDS(file = "Photometry_Eval.Active_Avoidance")
 
 # File location -----------------------------------------------------------
-guppylocation <- r"(C:\Users\bdy2530\Downloads\GuPPy_everything\SynapseTanks\AA-01.2026\BD_2color-250110-104351)"
+guppylocation <- r"(C:\Users\bdy2530\Downloads\GuPPy_everything\SynapseTanks\AA-combined_1-2-3)"
 guppyfolders.dir <- list.dirs(guppylocation, recursive = TRUE)
 guppyfiles <- list.files(guppylocation, recursive = TRUE) %>% 
   as_tibble() %>% 
@@ -34,21 +26,25 @@ guppyfiles <- list.files(guppylocation, recursive = TRUE) %>%
   semi_join(synapse_eval_trim, by = join_by(Filename)) %>% 
   select(!Filename)
 
-
          
 # Get file names ----------------------------------------------------------
 #get h5 files for extraction
-# possibleEvents <- c("InactiveNP", "PE_NR_Ts", "ActiveNP_NR", "Rew_Ts", 
-#                     "PE_Rew_Ts", "Shk_Ts", "L_NP_Ts", "R_NP_Ts")
 possibleEvents <- c("control_achDLS","control_achDMS","control_daDLS", "control_daDMS","signal_achDLS","signal_achDMS","signal_daDLS", "signal_daDMS",
                     "reward_delivered" ,"cue_on","port_entry" ,"lever_left" ,"lever_right" ,"timer","opto_on" ,"shock_on" ,"cue_off" ,"cue_on","cross" ,"escape","avoid" ,"shock","timer", "SkCs")
+
 event.H5.Files <- guppyfiles %>% 
   filter(str_detect(files, str_c("(",paste(possibleEvents, collapse = "|"), ").*z_score.*\\.h.*5")),
-         !str_detect(files, "Uncorrected|peak"))
+         !str_detect(files, "Uncorrected|peak")) %>% 
+  mutate(Filename = str_extract(files, "^[^/]+"),  # Re-add Filename from the top-level folder
+         Structure = str_extract(files, "(?<=_z_score_)[^\\.]+")) %>% 
+  semi_join(synapse_eval_trim, by = c("Filename", "Structure"))
+
 event.csv.Files <- guppyfiles %>% 
   filter(str_detect(files, str_c("(",paste(possibleEvents, collapse = "|"), ").*z_score.*\\.csv")),
-         !str_detect(files, "Uncorrected"))
-
+         !str_detect(files, "Uncorrected")) %>% 
+  mutate(Filename = str_extract(files, "^[^/]+"),  # Extract session name from top-level folder
+         Structure = str_extract(files, "(?<=_z_score_)[^\\.]+")) %>%  # Extract structure (e.g., achDLS) after "_z_score_"
+  semi_join(synapse_eval_trim, by = c("Filename", "Structure"))
 
 
 # Extract summary data (pos/neg peak, AUC) from csv's files ----------------------------------------------
@@ -89,21 +85,10 @@ map_df_progress <- function(.x, .f, ..., .id = NULL) {
   purrr::map_df(.x, f, ..., .id = .id)
 }
 
+
+
 #call to make pull
-# LBN_Operant_Data.Feats <- readRDS(glue("{Experiment}_Operant_Data.Feats.Rds"))
 LBN_Operant_Data.Feats <- tibble()
 saveRDS(LBN_Operant_Data.Feats, file = glue("{Experiment}_Operant_Data.Feats.Rds"))
 LBN_Operant_Data.Feats <- map_df_progress(event.csv.Files$files, readZmeanCSV)
-# LBN_Operant_Data.Feats <- LBN_Operant_Data.Feats %>% 
-#   mutate(Paradigm = ymd(Paradigm)) %>% 
-#   rename(Date = Paradigm)
 saveRDS(LBN_Operant_Data.Feats, file = glue("{Experiment}_Operant_Data.Feats.Rds"))
-# 
-# if (!file.exists("LBN_Operant_Data.Feats.Rds")){
-#   LBN_Operant_Data.Feats <- tibble()
-#   saveRDS(LBN_Operant_Data.Feats, file = "LBN_Operant_Data.Feats.Rds")
-#   LBN_Operant_Data.Feats <- map_df_progress(event.csv.Files$files, readZmeanCSV)
-#   saveRDS(LBN_Operant_Data.Feats, file = "LBN_Operant_Data.Feats.Rds")
-# }else {
-#   LBN_Operant_Data.Feats <- readRDS(file = "LBN_Operant_Data.Feats.Rds")
-# }

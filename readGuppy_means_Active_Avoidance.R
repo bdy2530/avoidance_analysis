@@ -20,7 +20,7 @@ synapse_eval_trim <- readRDS(file = "Photometry_Eval.Active_Avoidance")
 
 
 # File location -----------------------------------------------------------
-guppylocation <- r"(C:\Users\bdy2530\Downloads\GuPPy_everything\SynapseTanks\AA-01.2026\BD_2color-250110-104351)"
+guppylocation <- r"(C:\Users\bdy2530\Downloads\GuPPy_everything\SynapseTanks\AA-combined_1-2-3)"
 guppyfolders.dir <- list.dirs(guppylocation, recursive = TRUE)
 guppyfiles <- list.files(guppylocation, recursive = TRUE) %>% 
   as_tibble() %>% 
@@ -37,10 +37,17 @@ possibleEvents <- c("control_achDLS","control_achDMS","control_daDLS", "control_
 
 event.H5.Files <- guppyfiles %>% 
   filter(str_detect(files, str_c("(",paste(possibleEvents, collapse = "|"), ").*z_score.*\\.h.*5")),
-         !str_detect(files, "Uncorrected|peak"))
+         !str_detect(files, "Uncorrected|peak")) %>% 
+  mutate(Filename = str_extract(files, "^[^/]+"),  # Re-add session name
+         Structure = str_extract(files, "(?<=_z_score_)[^\\.]+")) %>%  # Extract structure (e.g., achDLS)
+  semi_join(synapse_eval_trim, by = c("Filename", "Structure"))  # Filter per session + structure
+
 event.csv.Files <- guppyfiles %>% 
   filter(str_detect(files, str_c("(",paste(possibleEvents, collapse = "|"), ").*z_score.*\\.csv")),
-         !str_detect(files, "Uncorrected"))
+         !str_detect(files, "Uncorrected")) %>% 
+  mutate(Filename = str_extract(files, "^[^/]+"),  # Re-add session name
+         Structure = str_extract(files, "(?<=_z_score_)[^\\.]+")) %>%  # Extract structure
+  semi_join(synapse_eval_trim, by = c("Filename", "Structure"))  # Filter per session + structure
 
 
 
@@ -76,6 +83,7 @@ readZmeanH5 <- function(event.H5.dir, experiment_dir = guppylocation, min_ts = -
 
   data_test
 }
+
 #wrapper for progress bar
 map_df_progress <- function(.x, .f, ..., .id = NULL) {
   .f <- purrr::as_mapper(.f, ...)

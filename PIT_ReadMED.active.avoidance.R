@@ -6,7 +6,7 @@ library(readxl)
 library(glue)
 #library(zoo)
 #options(warn = 2)
-source("C:/Users/bdy2530/Desktop/Analysis/functionsPIT_New.R")
+source("C:/Users/bdy2530/Desktop/avoidance_analysis/functionsPIT_New.R")
 
 Experiments <- c("Active.Avoidance")
 
