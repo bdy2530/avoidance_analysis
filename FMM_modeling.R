@@ -32,8 +32,8 @@ library(dplyr)
 library(lubridate)
 
 # Read the data
-photoDF <- readRDS("Combined_Operant_Data.Zscores.Rds")
-meta_data <- readRDS("Combined_meta_Data.Rds")
+photoDF <- readRDS("Active.Avoidance_Operant_Data.Zscores.Rds")
+meta_data <- readRDS("Active.Avoidance_meta_Data.Rds")
 
 # Extract the date part from DateTime in meta_data
 meta_data <- meta_data %>%
@@ -299,33 +299,3 @@ fui_plot_da <- plot_fui(mod_da,           # model fit object
                         #main = paste(file, " timeToFall"), ,    # use file name as the title
                         return = TRUE)
 saveRDS(fui_plot_da, file='FMM_Paradigm.Day_da_escape')
-
-
-# Converting to CSV----------------------------------
-
-# # Get a list of all .rds files in the directory
-# rds_files <- list.files(path = rds_directory, pattern = "\\.rds$", full.names = TRUE)
-# 
-# # Loop through each .rds file
-# for (file in rds_files) {
-#   # Read the .rds file
-#   data <- readRDS(file)
-#   
-#   # Extract the filename without extension
-#   file_name <- tools::file_path_sans_ext(basename(file))
-#   
-#   # Loop through each item in the list (data)
-#   for (name in names(data)) {
-#     # Get the dataframe
-#     df <- data[[name]]
-#     
-#     # Create a safe name for the file (replace problematic characters)
-#     safe_name <- gsub("[^[:alnum:]_]", "_", name)
-#     
-#     # Construct the CSV file name
-#     csv_file_name <- paste0(rds_directory, "/", file_name, "_", safe_name, ".csv")
-#     
-#     # Save the dataframe as a .csv file
-#     write.csv(df, file = csv_file_name, row.names = FALSE)
-#   }
-# }
