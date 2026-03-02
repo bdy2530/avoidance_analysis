@@ -86,19 +86,21 @@ df <- read.csv('cueOn_photoDF.csv')
 #df <- df %>%
 #  mutate(group = ifelse(group == "ach", 1, 0))
 
-ach_DF <- df[df$Structure == "achDLS", ]
-da_DF <- df[df$Structure == "daDLS", ]
+achDLS_DF <- df[df$Structure == "achDLS", ]
+daDLS_DF <- df[df$Structure == "daDLS", ]
+achDMS_DF <- df[df$Structure == "achDMS", ]
+daDMS_DF <- df[df$Structure == "daDMS", ]
 
 # Register parallel backend
 num_cores <- 8
 Sys.setenv(OMP_NUM_THREAD = num_cores)
 Sys.setenv(OPENBLAS_NUM_THREADS = num_cores)
-cl <- makeCluster(2, type = "PSOCK")  # 2 clusters for 2 models
+cl <- makeCluster(4, type = "PSOCK")  # 4 clusters for 4 models
 registerDoParallel(cl)
 options(mc.cores = num_cores)
 
 # Run models in parallel
-models <- foreach(data_subset = list(ach_DF, da_DF), 
+models <- foreach(data_subset = list(achDLS_DF, daDLS_DF, achDMS_DF, daDMS_DF), 
                   .packages = c("fastFMM"), .options.multicore = list(preschedule = FALSE)) %dopar% {
                         fui(Y_V ~ Paradigm_Day + Trial + (1 | Subject),
                             data = data_subset,
@@ -110,20 +112,11 @@ models <- foreach(data_subset = list(ach_DF, da_DF),
 stopCluster(cl)
 
 # Extract results
-mod_ach <- models[[1]]
-mod_da <- models[[2]]
+mod_achDLS <- models[[1]]
+mod_daDLS <- models[[2]]
+mod_achDMS <- models[[3]]
+mod_daDMS <- models[[4]]
 
-# mod_ach <- fui(Y_V ~ Paradigm_Day + Trial + # main effect of cue
-#              (1 | Subject),  # random intercept
-#            data = ach_DF,
-#            parallel = TRUE,
-#            analytic = FALSE) # bootstrap 
-# 
-# mod_da <- fui(Y_V ~ Paradigm_Day + Trial + # main effect of cue
-#                     (1 | Subject),  # random intercept
-#                   data = da_DF,
-#                   parallel = TRUE,
-#                   analytic = FALSE) # bootstrap 
 
 # Plot the fitted model
 fui_plot_ach <- plot_fui(mod_ach,           # model fit object
@@ -151,8 +144,8 @@ gc()
 write.csv(shock_photoDF, file='shock_photoDF.csv', row.names = FALSE)
 df <- read.csv('shock_photoDF.csv')
 
-ach_DF <- df[df$Structure == "achDLS", ]
-da_DF <- df[df$Structure == "daDLS", ]
+achDLS_DF <- df[df$Structure == "achDLS", ]
+daDLS_DF <- df[df$Structure == "daDLS", ]
 
 # Register parallel backend
 num_cores <- 8
@@ -163,7 +156,7 @@ registerDoParallel(cl)
 options(mc.cores = num_cores)
 
 # Run models in parallel
-models <- foreach(data_subset = list(ach_DF, da_DF), 
+models <- foreach(data_subset = list(achDLS_DF, daDLS_DF), 
                   .packages = c("fastFMM"), .options.multicore = list(preschedule = FALSE)) %dopar% {
                     fui(Y_V ~ Paradigm_Day + Trial + (1 | Subject),
                         data = data_subset,
@@ -203,8 +196,8 @@ gc()
 
 write.csv(avoid_photoDF, file='avoid_photoDF.csv', row.names = FALSE)
 df <- read.csv('avoid_photoDF.csv')
-ach_DF <- df[df$Structure == "achDLS", ]
-da_DF <- df[df$Structure == "daDLS", ]
+achDLS_DF <- df[df$Structure == "achDLS", ]
+daDLS_DF <- df[df$Structure == "daDLS", ]
 
 # Register parallel backend
 # Register parallel backend
@@ -216,7 +209,7 @@ registerDoParallel(cl)
 options(mc.cores = num_cores)
 
 # Run models in parallel
-models <- foreach(data_subset = list(ach_DF, da_DF), 
+models <- foreach(data_subset = list(achDLS_DF, daDLS_DF), 
                   .packages = c("fastFMM"), .options.multicore = list(preschedule = FALSE)) %dopar% {
                     fui(Y_V ~ Paradigm_Day + Trial + (1 | Subject),
                         data = data_subset,
@@ -255,8 +248,8 @@ gc()
 
 write.csv(escape_photoDF, file='escape_photoDF.csv', row.names = FALSE)
 df <- read.csv('escape_photoDF.csv')
-ach_DF <- df[df$Structure == "achDLS", ]
-da_DF <- df[df$Structure == "daDLS", ]
+achDLS_DF <- df[df$Structure == "achDLS", ]
+daDLS_DF <- df[df$Structure == "daDLS", ]
 
 # Register parallel backend
 # Register parallel backend
@@ -268,7 +261,7 @@ registerDoParallel(cl)
 options(mc.cores = num_cores)
 
 # Run models in parallel
-models <- foreach(data_subset = list(ach_DF, da_DF), 
+models <- foreach(data_subset = list(achDLS_DF, daDLS_DF), 
                   .packages = c("fastFMM"), .options.multicore = list(preschedule = FALSE)) %dopar% {
                     fui(Y_V ~ Paradigm_Day + Trial + (1 | Subject),
                         data = data_subset,

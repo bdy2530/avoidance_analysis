@@ -100,13 +100,11 @@ process_files_in_batches <- function(files, batch_size, downsample_factor) {
 }
 
 # Main script -------------------------------------------------------------
-Experiment <- "Combined"
-guppylocation <- r"(C:\Users\bdy2530\Desktop\GuPPy_everything\SynapseTanks\BD_2color-250110-104351)"
+Experiment <- "Active.Avoidance"
+guppylocation <- r"(C:\Users\bdy2530\Downloads\GuPPy_everything\SynapseTanks\AA-combined_1-2-3)"
 synapse_eval_trim <- readRDS(file = "Photometry_Eval.Active_Avoidance")
-synapse_eval_trim <- synapse_eval_trim %>% filter(Subject != 9503 & Structure != "DMS")
-# synapse_eval_trim <- synapse_eval_trim %>% filter(Subject == 9497) #FOR TESTING PURPOSES
 
-# Get file names ----------------------------------------------------------
+# Get file names
 guppyfiles <- list.files(guppylocation, recursive = TRUE) %>% 
   as_tibble() %>% 
   rename(files = value) %>% 
@@ -114,11 +112,11 @@ guppyfiles <- list.files(guppylocation, recursive = TRUE) %>%
   semi_join(synapse_eval_trim, by = join_by(Filename)) %>% dplyr::select(files)
 
 possibleEvents <- c("control_achDLS","control_daDLS","signal_achDLS","signal_daDLS",
-                    "cue_on","cue_off" ,"cue_on","cross" ,"escape","avoid" ,"shock", "SkCs")
+                    "cue_on","cue_off","cross" ,"escape","avoid" ,"shock")
 
 event.H5.Files <- guppyfiles %>% 
   filter(str_detect(files, str_c("(", paste(possibleEvents, collapse = "|"), ").*z_score.*\\.h.*5")),
-         !str_detect(files, "Uncorrected|peak"), !str_detect(files, "daDMS"), !str_detect(files, "achDMS"))
+         !str_detect(files, "Uncorrected|peak"))
 
 # Process files in batches
 LBN_Operant_Data.Zscores <- process_files_in_batches(event.H5.Files$files, batch_size = 60, downsample_factor = 100)
