@@ -1,4 +1,46 @@
 library(fastFMM)
+
+# SECTION 1: RUNTIME PATCH FOR fastFMM ---------
+# This function applies a "monkey patch" to the 'var_analytic' function within 
+# the 'fastFMM' package at runtime. It fixes a known bug where the object 'Z' 
+# is not found in specific execution paths.
+patch_var_analytic_z <- function() {
+  message("Patching fastFMM:::var_analytic to fix 'object Z not found'...")
+  
+  # 1. Access the internal function from the namespace
+  ns <- asNamespace("fastFMM")
+  if (!exists("var_analytic", where = ns, inherits = FALSE)) {
+    stop("Could not find 'var_analytic' in fastFMM namespace.")
+  }
+  target_fun <- get("var_analytic", envir = ns)
+  
+  # 2. Get source code as text
+  fun_src <- deparse(body(target_fun), width.cutoff = 500)
+  
+  # 3. Locate the specific anchor line: "HHat_trim <- NA"
+  # We insert "Z <- NULL" immediately after to ensure Z is initialized.
+  target_line <- "HHat_trim <- NA"
+  
+  if (!any(grepl(target_line, fun_src, fixed = TRUE))) {
+    warning("Patch Failed: Could not find anchor line 'HHat_trim <- NA'.")
+    return()
+  }
+  
+  # 4. Apply the Patch: Replace "HHat_trim <- NA" with "HHat_trim <- NA; Z <- NULL"
+  fun_src_patched <- gsub(target_line, "HHat_trim <- NA; Z <- NULL", fun_src, fixed = TRUE)
+  
+  # 5. Save modified function back to namespace
+  body(target_fun) <- parse(text = paste(fun_src_patched, collapse = "\n"))[[1]]
+  assignInNamespace("var_analytic", target_fun, ns = "fastFMM")
+  
+  message("Success: fastFMM:::var_analytic patched. Z initialized to NULL.")
+}
+
+# Execute the patch immediately
+patch_var_analytic_z()
+
+
+# SECTION 2: LIBRARIES AND SETUP ------
 library(lme4)
 library(parallel)
 library(cAIC4)
@@ -17,278 +59,215 @@ library(ggplot2)
 library(gridExtra)
 library(Rfast)
 library(arrow)
-library(feather)
 library(data.table)
 library(tidyr)
 library(doParallel)
-library(parallel)
 library(foreach)
-
-# Initializing --------------
-rm(list=ls())
-#TAIL
-# Load necessary libraries
-library(dplyr)
 library(lubridate)
 
-# Read the data
-photoDF <- readRDS("Active.Avoidance_Operant_Data.Zscores.Rds")
-meta_data <- readRDS("Active.Avoidance_meta_Data.Rds")
+# Clear environment variables to ensure a clean start
+rm(list=ls())
 
-# Extract the date part from DateTime in meta_data
-meta_data <- meta_data %>%
-  mutate(Date = as_date(DateTime))
+Experiment <- "Active.Avoidance"
 
-# Summarize meta_data to ensure unique dates
-meta_data_unique <- meta_data %>%
-  group_by(Date) %>%
-  summarise(Paradigm.Day = first(Paradigm.Day))
-
-# Merge the data frames by matching the Date column
-merged_data <- photoDF %>%
-  left_join(meta_data_unique, by = "Date")
-
-# Reorder the columns
-important_columns <- c("Subject", "Trial", "Event", "Structure", "Date", "Paradigm.Day")
-data_columns <- setdiff(names(merged_data), important_columns)
-
-# Combine important columns and data columns
-merged_data <- merged_data %>%
-  dplyr::select(all_of(important_columns), all_of(data_columns))
-
-# Assign the merged data back to photoDF and remove the temporary variable
-photoDF <- merged_data
-rm(merged_data)
-colnames(photoDF) <- gsub("\\.", "_", colnames(photoDF))
-photoDF <- filter(photoDF, !Paradigm_Day == 8)
+photoDF <- readRDS(file = glue("{Experiment}_photoDF.Rds"))
 
 # Display the reordered data frame
 print(head(photoDF))
 
-# FMM for cueon ----------------------------------------------------
-event <- 'cue_on'
-cueOn_photoDF <- photoDF[photoDF$Event == event, ]
-gc()
 
-#x <- colMeans(do.call(rbind, cueOn_photoDF$trimTime), na.rm = TRUE)
-#cueOn_photoDF <- cueOn_photoDF[, !(names(cueOn_photoDF) %in% c('recordingLoc', 'event', 'sesType', 'trimTime'))]
+# SECTION 3: HELPER FUNCTION ------
+clean_via_csv <- function(df, filename_base) {
+  fname <- paste0(filename_base, ".csv")
+  write.csv(df, file = fname, row.names = FALSE)
+  
+  read_df <- read.csv(fname)
+  
+  # Filter rows where timeSince_ReNP is NA (if column exists)
+  if("timeSince_ReNP" %in% names(read_df)){
+    read_df <- read_df[!is.na(read_df$timeSince_ReNP), ]
+  }
+  return(read_df)
+}
 
-# cueOn_photoDF$trimTrace <- lapply(cueOn_photoDF$trimTrace, function(x) x[seq(1, length(x), by = 5)])
-# cueOn_photoDF$trimTime <- lapply(cueOn_photoDF$trimTime, function(x) x[seq(1, length(x), by = 5)])
+# Function: Run FUI Analysis
+# Purpose: Fits a Fast Univariate Inference (Functional Data Analysis) model.
+# Inputs: 
+#   - data: The dataset (wide format).
+#   - fixed_formula: The fixed effects portion of the model formula.
+#   - output_filename: Path to save the resulting RDS file.
+run_fui_analysis <- function(data, fixed_formula, output_filename) {
+  # Skip if analysis file already exists
+  if (file.exists(output_filename)) {
+    message(paste("File exists, skipping:", output_filename))
+    return(NULL)
+  }
+  
+  message(paste("Running FUI for:", output_filename))
+  
+  # CRITICAL FIX: Convert to pure data.frame and remove NAs.
+  # Tibbles can cause "subscript out of bounds" errors in fastFMM parallel workers.
+  data <- as.data.frame(na.omit(data))
+  
+  # Construct full mixed-effects formula (adding random intercept for mouse)
+  full_formula <- as.formula(paste(fixed_formula, "+ (1 | mouse)"))
+  
+  # Run Model using fastFMM/refund logic
+  # Uses n_cores - 1 to leave resources for OS
+  mod <- fui(formula = full_formula,
+             data = data,
+             analytic = TRUE,
+             parallel = TRUE,
+             n_cores = detectCores() -1)
+  
+  # Generate Plot Data from the model object
+  plot_obj <- plot_fui(mod,
+                       x_rescale = 50, # Rescaling factor for X-axis
+                       align_x = 5,    # Alignment point
+                       xlab = "Time (s)",
+                       return = TRUE)
+  
+  # Save the plot object (containing results) to RDS
+  saveRDS(plot_obj, file = output_filename)
+}
 
+# SECTION 4: DATA PRE-PROCESSING ------
+# Recode categorical variables for modeling (Male/Escape -> 0, Female/Avoid -> 1)
+photoDF <- photoDF %>%
+  rename(trialOutcome = 'trial outcome')  %>%
+  mutate(
+    sex = case_when(
+      sex == "Male" ~ 0,
+      sex == "Female" ~ 1,
+      TRUE ~ as.numeric(sex)
+    )
+  ) %>% 
+  mutate(
+    trialOutcome = case_when(
+      trialOutcome == "escape" ~ 0,
+      trialOutcome == "avoid" ~ 1,
+      TRUE ~ as.numeric(trialOutcome)
+    )
+  ) %>%
+  rename(trialOnDay = trial) %>%
+  # NEW: Calculate cumulative trials based on fixed structure (30 trials/day)
+  # This formula works even if rows are missing
+  mutate(totalTrials = (dayOnType - 1) * 30 + trialOnDay)
 
-# Step 1: Determine the maximum length of photoTrace
-#max_length <- max(sapply(subset_dat$photoTrace, length))
+# Drop unused column
+photoDF$recordingLoc <- NULL
 
+events <- unique(photoDF$event)
+events <- events[events != "Coff"] # Exclude 'Coff' event
 
-write.csv(cueOn_photoDF, file='cueOn_photoDF.csv', row.names = FALSE)
-df <- read.csv('cueOn_photoDF.csv')
-#df <- df %>%
-#  mutate(group = ifelse(group == "ach", 1, 0))
-
-achDLS_DF <- df[df$Structure == "achDLS", ]
-daDLS_DF <- df[df$Structure == "daDLS", ]
-achDMS_DF <- df[df$Structure == "achDMS", ]
-daDMS_DF <- df[df$Structure == "daDMS", ]
-
-# Register parallel backend
-num_cores <- 8
-Sys.setenv(OMP_NUM_THREAD = num_cores)
-Sys.setenv(OPENBLAS_NUM_THREADS = num_cores)
-cl <- makeCluster(4, type = "PSOCK")  # 4 clusters for 4 models
-registerDoParallel(cl)
-options(mc.cores = num_cores)
-
-# Run models in parallel
-models <- foreach(data_subset = list(achDLS_DF, daDLS_DF, achDMS_DF, daDMS_DF), 
-                  .packages = c("fastFMM"), .options.multicore = list(preschedule = FALSE)) %dopar% {
-                        fui(Y_V ~ Paradigm_Day + Trial + (1 | Subject),
-                            data = data_subset,
-                            parallel = TRUE,  
-                            analytic = FALSE)
-                  }
-
-# Stop the cluster
-stopCluster(cl)
-
-# Extract results
-mod_achDLS <- models[[1]]
-mod_daDLS <- models[[2]]
-mod_achDMS <- models[[3]]
-mod_daDMS <- models[[4]]
-
-
-# Plot the fitted model
-fui_plot_ach <- plot_fui(mod_ach,           # model fit object
-                     x_rescale = 10, # rescale x-axis to sampling rate
-                     align_x = 10,
-                     xlab = "Time (s)",
-                     #main = paste(file, " timeToFall"), ,    # use file name as the title
-                     return = TRUE)
-saveRDS(fui_plot_ach, file='FMM_Paradigm.Day_ach_cueon')
-
-
-fui_plot_da <- plot_fui(mod_da,           # model fit object
-                             x_rescale = 10, # rescale x-axis to sampling rate
-                             align_x = 10,
-                            xlab = "Time (s)",
-                            #main = paste(file, " timeToFall"), ,    # use file name as the title
-                            return = TRUE)
-saveRDS(fui_plot_da, file='FMM_Paradigm.Day_da_cueon')
-
-# FMM for shock ----------------------------------------------------
-event <- 'shock'
-shock_photoDF <- photoDF[photoDF$Event == event, ]
-gc()
-
-write.csv(shock_photoDF, file='shock_photoDF.csv', row.names = FALSE)
-df <- read.csv('shock_photoDF.csv')
-
-achDLS_DF <- df[df$Structure == "achDLS", ]
-daDLS_DF <- df[df$Structure == "daDLS", ]
-
-# Register parallel backend
-num_cores <- 8
-Sys.setenv(OMP_NUM_THREAD = num_cores)
-Sys.setenv(OPENBLAS_NUM_THREADS = num_cores)
-cl <- makeCluster(2, type = "PSOCK")  # 2 clusters for 2 models
-registerDoParallel(cl)
-options(mc.cores = num_cores)
-
-# Run models in parallel
-models <- foreach(data_subset = list(achDLS_DF, daDLS_DF), 
-                  .packages = c("fastFMM"), .options.multicore = list(preschedule = FALSE)) %dopar% {
-                    fui(Y_V ~ Paradigm_Day + Trial + (1 | Subject),
-                        data = data_subset,
-                        parallel = TRUE,  
-                        analytic = FALSE)
-                  }
-
-# Stop the cluster
-stopCluster(cl)
-
-# Extract results
-mod_ach <- models[[1]]
-mod_da <- models[[2]]
-
-# Plot the fitted model
-fui_plot_ach <- plot_fui(mod_ach,           # model fit object
-                          x_rescale = 10, # rescale x-axis to sampling rate
-                          align_x = 10,
-                          xlab = "Time (s)",
-                          #main = paste(file, " timeToFall"), ,    # use file name as the title
-                          return = TRUE)
-saveRDS(fui_plot_ach, file='FMM_Paradigm.Day_ach_shock')
-
-fui_plot_da <- plot_fui(mod_da,           # model fit object
-                         x_rescale = 10, # rescale x-axis to sampling rate
-                         align_x = 10,
-                         xlab = "Time (s)",
-                         #main = paste(file, " timeToFall"), ,    # use file name as the title
-                         return = TRUE)
-saveRDS(fui_plot_da, file='FMM_Paradigm.Day_da_shock')
+# SECTION 5: DATA RESHAPING ------
 
 
-# FMM for avoid ----------------------------------------------------
-event <- 'avoid'
-avoid_photoDF <- photoDF[photoDF$Event == event, ]
-gc()
+# Downsample photoTrace (keep every 2nd point) to reduce computational load
+x <- colMeans(do.call(rbind, photoDF$photoTrace), na.rm = TRUE)
+photoDF$photoTrace <- lapply(photoDF$photoTrace, function(x) x[seq(1, length(x), by = 2)])
 
-write.csv(avoid_photoDF, file='avoid_photoDF.csv', row.names = FALSE)
-df <- read.csv('avoid_photoDF.csv')
-achDLS_DF <- df[df$Structure == "achDLS", ]
-daDLS_DF <- df[df$Structure == "daDLS", ]
+# Explode list-columns into wide format columns (e.g., photoTrace_1, photoTrace_2...)
+# This creates the matrix format required by the regression model
+photoDF_exploded <- photoDF %>%
+  unnest_wider(photoTrace, names_sep = "_") 
 
-# Register parallel backend
-# Register parallel backend
-num_cores <- 8
-Sys.setenv(OMP_NUM_THREAD = num_cores)
-Sys.setenv(OPENBLAS_NUM_THREADS = num_cores)
-cl <- makeCluster(2, type = "PSOCK")  # 2 clusters for 2 models
-registerDoParallel(cl)
-options(mc.cores = num_cores)
+# Remove list columns that weren't exploded to prevent errors
+if("time" %in% names(photoDF_exploded)) {
+  photoDF_exploded$time <- NULL
+}
 
-# Run models in parallel
-models <- foreach(data_subset = list(achDLS_DF, daDLS_DF), 
-                  .packages = c("fastFMM"), .options.multicore = list(preschedule = FALSE)) %dopar% {
-                    fui(Y_V ~ Paradigm_Day + Trial + (1 | Subject),
-                        data = data_subset,
-                        parallel = TRUE,  
-                        analytic = FALSE)
-                  }
+# Create subsets based on Recording Location (DLS/DMS) and Sensor (DA/ACh)
+DLS_photoDF <- photoDF_exploded[photoDF_exploded$recLoc == 'DLS', ]
+DMS_photoDF <- photoDF_exploded[photoDF_exploded$recLoc == 'DMS', ]
 
-# Stop the cluster
-stopCluster(cl)
 
-# Extract results
-mod_ach <- models[[1]]
-mod_da <- models[[2]]
+DMS_DA_photoDF  <- photoDF_exploded[photoDF_exploded$recLoc == 'DMS' & photoDF_exploded$sensor == 'da', ]
+DMS_ACh_photoDF <- photoDF_exploded[photoDF_exploded$recLoc == 'DMS' & photoDF_exploded$sensor == 'ach', ]
+DLS_DA_photoDF  <- photoDF_exploded[photoDF_exploded$recLoc == 'DLS' & photoDF_exploded$sensor == 'da', ]
+DLS_ACh_photoDF <- photoDF_exploded[photoDF_exploded$recLoc == 'DLS' & photoDF_exploded$sensor == 'ach', ]
 
-# Plot the fitted model
-fui_plot_ach <- plot_fui(mod_ach,           # model fit object
-                          x_rescale = 10, # rescale x-axis to sampling rate
-                          align_x = 10,
-                          xlab = "Time (s)",
-                          #main = paste(file, " timeToFall"), ,    # use file name as the title
-                          return = TRUE)
-saveRDS(fui_plot_ach, file='FMM_Paradigm.Day_ach_avoid')
+# Sanitize datasets using the CSV read/write hack
+df_DMS_da   <- clean_via_csv(DMS_DA_photoDF, "DMS_DA_photoDF")
+df_DMS_ach  <- clean_via_csv(DMS_ACh_photoDF, "DMS_ACh_photoDF")
+df_DLS_da   <- clean_via_csv(DLS_DA_photoDF, "DLS_DA_photoDF")
+df_DLS_ach  <- clean_via_csv(DLS_ACh_photoDF, "DLS_ACh_photoDF")
 
-fui_plot_da <- plot_fui(mod_da,           # model fit object
-                         x_rescale = 10, # rescale x-axis to sampling rate
-                         align_x = 10,
-                         xlab = "Time (s)",
-                         #main = paste(file, " timeToFall"), ,    # use file name as the title
-                         return = TRUE)
-saveRDS(fui_plot_da, file='FMM_Paradigm.Day_da_avoid')
+# Store cleaned dataframes in a named list for iteration
+df_list <- list(
+  DMS_da  = df_DMS_da,
+  DMS_ach = df_DMS_ach,
+  DLS_da  = df_DLS_da,
+  DLS_ach = df_DLS_ach
+)
 
-# FMM for escape ----------------------------------------------------
-event <- 'escape'
-escape_photoDF <- photoDF[photoDF$Event == event, ]
-gc()
+# create folder for outputs
+setwd("FMM_Results")
 
-write.csv(escape_photoDF, file='escape_photoDF.csv', row.names = FALSE)
-df <- read.csv('escape_photoDF.csv')
-achDLS_DF <- df[df$Structure == "achDLS", ]
-daDLS_DF <- df[df$Structure == "daDLS", ]
+# SECTION 6: MAIN ANALYSIS LOOP ------
+for (name in names(df_list)) {
+  for (targetEv in events) {
+    # Extract the current dataframe
+    current_df <- df_list[[name]]
+    
+    # Determine dependent variable: 'filtered_corr' for correlation data, 'photoTrace' for photometry
+    y_var <- if (grepl("corr", name)) "filtered_corr" else "photoTrace"
+    
+    # Subset by Event Type
+    subset_df <- current_df[current_df$event == targetEv, ]
+    
+    # Subset by Sex for sex-specific models
+    subset_df_M <- subset_df[subset_df$sex == 0,]
+    subset_df_F <- subset_df[subset_df$sex == 1,]
+    
+    # Run Trial Outcome model only for "Cues" event
+    if (targetEv == "Cues") {
+      run_fui_analysis(subset_df, paste(y_var, "~ trialOutcome"), paste0(targetEv, "_", name, "_FMM_trialOutcome.rds"))
+    }
+    
+    # Run standard battery of models
+    # Formulas are dynamically constructed using paste() to insert the correct y_var
+    run_fui_analysis(subset_df,   paste(y_var, "~ performance"),       paste0(targetEv, "_", name, "_FFM_perf.rds"))
+    run_fui_analysis(subset_df,   paste(y_var, "~ totalTrials"),       paste0(targetEv, "_", name, "_FFM_totTri.rds"))
+    run_fui_analysis(subset_df,   paste(y_var, "~ dayOnType"),         paste0(targetEv, "_", name, "_FFM_DOT.rds"))
+    run_fui_analysis(subset_df,   paste(y_var, "~ latency"),           paste0(targetEv, "_", name, "_FFM_latency.rds"))
+    run_fui_analysis(subset_df,   paste(y_var, "~ sex"),               paste0(targetEv, "_", name, "_FFM_sex.rds"))
+    run_fui_analysis(subset_df,   paste(y_var, "~ sex * performance"), paste0(targetEv, "_", name, "_FFM_sex_perf.rds"))
+    run_fui_analysis(subset_df,   paste(y_var, "~ sex * latency"), paste0(targetEv, "_", name, "_FFM_sex_lat.rds"))
+    run_fui_analysis(subset_df,   paste(y_var, "~ sex * totalTrials"), paste0(targetEv, "_", name, "_FFM_sex_totTri.rds"))
+    
+    
+    
+    # # Run sex-specific performance models
+    # run_fui_analysis(subset_df_M, paste(y_var, "~ performance"),       paste0(targetEv, "_", name, "_FFM_perf_M.rds"))
+    # run_fui_analysis(subset_df_F, paste(y_var, "~ performance"),       paste0(targetEv, "_", name, "_FFM_perf_F.rds"))
+    # run_fui_analysis(subset_df_M, paste(y_var, "~ latency"),       paste0(targetEv, "_", name, "_FFM_latency_M.rds"))
+    # run_fui_analysis(subset_df_F, paste(y_var, "~ latency"),       paste0(targetEv, "_", name, "_FFM_latency_F.rds"))
+    # run_fui_analysis(subset_df_M, paste(y_var, "~ totalTrials"),       paste0(targetEv, "_", name, "_FFM_totalTrials_M.rds"))
+    # run_fui_analysis(subset_df_F, paste(y_var, "~ totalTrials"),       paste0(targetEv, "_", name, "_FFM_totalTrials_F.rds"))
+    
+  }
+}
 
-# Register parallel backend
-# Register parallel backend
-num_cores <- 8
-Sys.setenv(OMP_NUM_THREAD = num_cores)
-Sys.setenv(OPENBLAS_NUM_THREADS = num_cores)
-cl <- makeCluster(2, type = "PSOCK")  # 2 clusters for 2 models
-registerDoParallel(cl)
-options(mc.cores = num_cores)
 
-# Run models in parallel
-models <- foreach(data_subset = list(achDLS_DF, daDLS_DF), 
-                  .packages = c("fastFMM"), .options.multicore = list(preschedule = FALSE)) %dopar% {
-                    fui(Y_V ~ Paradigm_Day + Trial + (1 | Subject),
-                        data = data_subset,
-                        parallel = TRUE,  
-                        analytic = FALSE)
-                  }
+# SECTION 7: RESULT EXPORT ------
+rds_files <- list.files(path = "C:/Users/bdy2530/Documents/FMM_Results", pattern = "\\.rds$", full.names = TRUE)
+rds_directory <- "C:/Users/bdy2530/Documents/FMM_Results"
 
-# Stop the cluster
-stopCluster(cl)
 
-# Extract results
-mod_ach <- models[[1]]
-mod_da <- models[[2]]
-
-# Plot the fitted model
-fui_plot_ach <- plot_fui(mod_ach,           # model fit object
-                         x_rescale = 10, # rescale x-axis to sampling rate
-                         align_x = 10,
-                         xlab = "Time (s)",
-                         #main = paste(file, " timeToFall"), ,    # use file name as the title
-                         return = TRUE)
-saveRDS(fui_plot_ach, file='FMM_Paradigm.Day_ach_escape')
-
-fui_plot_da <- plot_fui(mod_da,           # model fit object
-                        x_rescale = 10, # rescale x-axis to sampling rate
-                        align_x = 10,
-                        xlab = "Time (s)",
-                        #main = paste(file, " timeToFall"), ,    # use file name as the title
-                        return = TRUE)
-saveRDS(fui_plot_da, file='FMM_Paradigm.Day_da_escape')
+for (file in rds_files) {
+  data <- readRDS(file)
+  file_name <- tools::file_path_sans_ext(basename(file))
+    
+  # Iterate through objects in the RDS list structure
+  for (name in names(data)) {
+    df <- data[[name]]
+    safe_name <- gsub("[^[:alnum:]_]", "_", name) # Sanitize component name
+    csv_file_name <- file.path(rds_directory, paste0(file_name, "_", safe_name, ".csv"))
+      
+    # Check if object is data frame/matrix AND file doesn't exist before writing
+    if ((is.data.frame(df) || is.matrix(df)) && !file.exists(csv_file_name)) {
+      write.csv(df, file = csv_file_name, row.names = FALSE)
+      }
+    }
+  }
