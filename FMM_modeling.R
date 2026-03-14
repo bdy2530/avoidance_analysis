@@ -161,8 +161,6 @@ events <- unique(photoDF$event)
 events <- events[events != "Coff"] # Exclude 'Coff' event
 
 # SECTION 5: DATA RESHAPING ------
-
-
 # Downsample photoTrace (keep every 2nd point) to reduce computational load
 x <- colMeans(do.call(rbind, photoDF$photoTrace), na.rm = TRUE)
 photoDF$photoTrace <- lapply(photoDF$photoTrace, function(x) x[seq(1, length(x), by = 2)])
@@ -271,3 +269,342 @@ for (file in rds_files) {
       }
     }
   }
+
+# SECTION 8: PLOT RESULTS ------
+library(ggplot2)
+library(tools)
+
+# ---- CONFIGURATION ----
+rds_directory <- "C:/Users/bdy2530/Documents/FMM_Results"
+plot_directory <- file.path(rds_directory, "Plots")
+if (!dir.exists(plot_directory)) dir.create(plot_directory, recursive = TRUE)
+
+rds_files <- list.files(path = rds_directory, pattern = "\\.rds$", full.names = TRUE)
+
+# ---- TIME AXIS SETUP ----
+# Your original data spans -10 to 10 seconds.
+# After downsampling by 2 in your script, you have 509 points.
+# Map index 1..509 back to real time:
+time_start <- -10  # seconds
+time_end   <-  10  # seconds
+n_points   <- 509  # number of points after downsampling
+
+real_time <- seq(time_start, time_end, length.out = n_points)
+
+# ---- Plotting function ----
+plot_fui_result <- function(rds_path, save_dir) {
+  data <- readRDS(rds_path)
+  file_label <- file_path_sans_ext(basename(rds_path))
+  
+  for (term_name in names(data)) {
+    df <- data[[term_name]]
+    
+    if (!is.data.frame(df) || nrow(df) == 0) next
+    
+    # Match column names
+    x_col   <- intersect(names(df), c("s", "x", "argvals", "time"))[1]
+    fit_col <- intersect(names(df), c("beta.hat", "fit", "est", "estimate", "coef"))[1]
+    pw_lwr  <- intersect(names(df), c("CI.lower.pointwise", "lower", "lwr"))[1]
+    pw_upr  <- intersect(names(df), c("CI.upper.pointwise", "upper", "upr"))[1]
+    jt_lwr  <- intersect(names(df), c("CI.lower.joint"))[1]
+    jt_upr  <- intersect(names(df), c("CI.upper.joint"))[1]
+    
+    if (is.na(x_col) || is.na(fit_col)) {
+      message(paste("  Skipping term", term_name, "- can't find x/fit columns"))
+      next
+    }
+    
+    # ---- CONVERT INDEX TO REAL TIME ----
+    n_rows <- nrow(df)
+    if (n_rows == n_points) {
+      # Exact match — use precomputed time vector
+      time_vec <- real_time
+    } else {
+      # Different length (safety fallback) — recompute
+      message(paste("  Note:", term_name, "has", n_rows, "rows, expected", n_points, "- rescaling anyway"))
+      time_vec <- seq(time_start, time_end, length.out = n_rows)
+    }
+    
+    # Build plotting data frame with REAL time
+    plot_df <- data.frame(
+      x   = time_vec,
+      fit = df[[fit_col]]
+    )
+    
+    has_pw <- !is.na(pw_lwr) && !is.na(pw_upr)
+    has_jt <- !is.na(jt_lwr) && !is.na(jt_upr)
+    
+    if (has_pw) {
+      plot_df$pw_lower <- df[[pw_lwr]]
+      plot_df$pw_upper <- df[[pw_upr]]
+    }
+    if (has_jt) {
+      plot_df$jt_lower <- df[[jt_lwr]]
+      plot_df$jt_upper <- df[[jt_upr]]
+    }
+    
+    safe_term <- gsub("[^[:alnum:]_]", "_", term_name)
+    
+    # ---- Build the plot ----
+    p <- ggplot(plot_df, aes(x = x, y = fit)) +
+      # Joint CI band (wider, lighter)
+      { if (has_jt) geom_ribbon(aes(ymin = jt_lower, ymax = jt_upper),
+                                fill = "steelblue", alpha = 0.15) } +
+      # Pointwise CI band (narrower, darker)
+      { if (has_pw) geom_ribbon(aes(ymin = pw_lower, ymax = pw_upper),
+                                fill = "steelblue", alpha = 0.3) } +
+      # Effect estimate
+      geom_line(color = "steelblue", linewidth = 1) +
+      # ---- AXIS LINES AT ORIGIN ----
+    # Horizontal: y = 0 (no effect reference)
+    geom_hline(yintercept = 0, linetype = "dashed", color = "red", linewidth = 0.5) +
+      # Vertical: x = 0 (event onset)
+      geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 0.5) +
+      # ---- LABELS ----
+    labs(
+      title    = file_label,
+      subtitle = paste("Term:", term_name),
+      x        = "Time from event (s)",
+      y        = "Coefficient Estimate (ΔF/F)"
+    ) +
+      # ---- CLEAN AXIS SCALING ----
+    scale_x_continuous(
+      breaks = seq(time_start, time_end, by = 2),  # tick every 2 seconds
+      limits = c(time_start, time_end)
+    ) +
+      theme_minimal(base_size = 14) +
+      theme(
+        plot.title    = element_text(face = "bold", size = 12),
+        plot.subtitle = element_text(size = 10, color = "grey40")
+      )
+    
+    # Save
+    out_file <- file.path(save_dir, paste0(file_label, "_", safe_term, ".png"))
+    ggsave(out_file, plot = p, width = 8, height = 5, dpi = 300)
+    message(paste("  Saved:", out_file))
+  }
+}
+
+# ---- Loop through all RDS files ----
+for (f in rds_files) {
+  message(paste("Processing:", basename(f)))
+  plot_fui_result(f, plot_directory)
+}
+
+message("Done! All plots saved to: ", plot_directory)
+
+# SECTION 9: PRIORITY LISTING ------
+library(tools)
+library(dplyr)
+
+# ---- CONFIGURATION ----
+rds_directory <- "C:/Users/bdy2530/Documents/FMM_Results"
+plot_directory <- file.path(rds_directory, "Plots")
+
+rds_files <- list.files(path = rds_directory, pattern = "\\.rds$", full.names = TRUE)
+
+# Time mapping
+time_start <- -10
+time_end   <-  10
+n_points   <- 509
+real_time  <- seq(time_start, time_end, length.out = n_points)
+
+# ---- SCORE EVERY TERM IN EVERY FILE ----
+results <- list()
+
+for (f in rds_files) {
+  data <- readRDS(f)
+  file_label <- file_path_sans_ext(basename(f))
+  
+  for (term_name in names(data)) {
+    df <- data[[term_name]]
+    if (!is.data.frame(df) || nrow(df) == 0) next
+    if (term_name == "(Intercept)") next
+    
+    fit_col <- intersect(names(df), c("beta.hat", "fit", "est"))[1]
+    jt_lwr  <- intersect(names(df), c("CI.lower.joint"))[1]
+    jt_upr  <- intersect(names(df), c("CI.upper.joint"))[1]
+    pw_lwr  <- intersect(names(df), c("CI.lower.pointwise"))[1]
+    pw_upr  <- intersect(names(df), c("CI.upper.pointwise"))[1]
+    
+    if (is.na(fit_col)) next
+    
+    n_rows <- nrow(df)
+    time_vec <- if (n_rows == n_points) real_time else seq(time_start, time_end, length.out = n_rows)
+    
+    # ---- Significance at each timepoint ----
+    if (!is.na(pw_lwr) && !is.na(pw_upr)) {
+      sig_pw <- (df[[pw_lwr]] * df[[pw_upr]]) > 0
+    } else {
+      sig_pw <- rep(FALSE, n_rows)
+    }
+    
+    if (!is.na(jt_lwr) && !is.na(jt_upr)) {
+      sig_joint <- (df[[jt_lwr]] * df[[jt_upr]]) > 0
+    } else {
+      sig_joint <- rep(FALSE, n_rows)
+    }
+    
+    # ---- Pre / Post breakdown ----
+    pre_idx  <- time_vec < 0
+    post_idx <- time_vec > 0
+    
+    n_sig_pw       <- sum(sig_pw, na.rm = TRUE)
+    n_sig_pw_pre   <- sum(sig_pw[pre_idx], na.rm = TRUE)
+    n_sig_pw_post  <- sum(sig_pw[post_idx], na.rm = TRUE)
+    n_sig_joint    <- sum(sig_joint, na.rm = TRUE)
+    n_sig_jt_pre   <- sum(sig_joint[pre_idx], na.rm = TRUE)
+    n_sig_jt_post  <- sum(sig_joint[post_idx], na.rm = TRUE)
+    
+    pct_sig_pw       <- round(100 * n_sig_pw / n_rows, 1)
+    pct_sig_pw_pre   <- round(100 * n_sig_pw_pre / sum(pre_idx), 1)
+    pct_sig_pw_post  <- round(100 * n_sig_pw_post / sum(post_idx), 1)
+    pct_sig_joint    <- round(100 * n_sig_joint / n_rows, 1)
+    pct_sig_jt_pre   <- round(100 * n_sig_jt_pre / sum(pre_idx), 1)
+    pct_sig_jt_post  <- round(100 * n_sig_jt_post / sum(post_idx), 1)
+    
+    # ---- Effect sizes ----
+    peak_effect <- round(max(abs(df[[fit_col]]), na.rm = TRUE), 4)
+    
+    if (n_sig_pw > 0) {
+      peak_effect_sig <- round(max(abs(df[[fit_col]][sig_pw]), na.rm = TRUE), 4)
+    } else {
+      peak_effect_sig <- 0
+    }
+    
+    # ---- Direction ----
+    if (n_sig_pw > 0) {
+      sig_vals <- df[[fit_col]][sig_pw]
+      n_pos <- sum(sig_vals > 0)
+      n_neg <- sum(sig_vals < 0)
+      direction <- if (n_pos > 0 & n_neg > 0) "mixed" else if (n_pos > 0) "positive" else "negative"
+    } else {
+      direction <- "—"
+    }
+    
+    # ---- Characterize WHERE significance occurs ----
+    sig_times_pw <- time_vec[sig_pw]
+    if (length(sig_times_pw) > 0) {
+      has_pre  <- any(sig_times_pw < 0)
+      has_post <- any(sig_times_pw > 0)
+      sig_location <- if (has_pre & has_post) "pre + post" else if (has_pre) "pre only" else "post only"
+      sig_time_range <- paste0("[", round(min(sig_times_pw), 2), "s to ", 
+                               round(max(sig_times_pw), 2), "s]")
+    } else {
+      sig_location <- "—"
+      sig_time_range <- "—"
+    }
+    
+    # ---- Parse filename ----
+    parts <- strsplit(file_label, "_FFM_|_FMM_")[[1]]
+    if (length(parts) == 2) {
+      model_part <- parts[2]
+      desc_parts <- strsplit(parts[1], "_")[[1]]
+      n_desc <- length(desc_parts)
+      sensor <- if (n_desc >= 1) desc_parts[n_desc] else "?"
+      region <- if (n_desc >= 2) desc_parts[n_desc - 1] else "?"
+      event  <- if (n_desc >= 3) paste(desc_parts[1:(n_desc - 2)], collapse = "_") else "?"
+    } else {
+      event <- file_label; region <- "?"; sensor <- "?"; model_part <- "?"
+    }
+    
+    safe_term <- gsub("[^[:alnum:]_]", "_", term_name)
+    png_name  <- paste0(file_label, "_", safe_term, ".png")
+    
+    results[[length(results) + 1]] <- data.frame(
+      event, region, sensor, model = model_part, term = term_name,
+      direction, sig_location,
+      pct_sig_pw, pct_sig_pw_pre, pct_sig_pw_post,
+      pct_sig_joint, pct_sig_jt_pre, pct_sig_jt_post,
+      peak_effect, peak_effect_sig, sig_time_range,
+      png = png_name, file = file_label,
+      stringsAsFactors = FALSE
+    )
+  }
+}
+
+# ---- COMBINE AND RANK ----
+# Primary sort: overall pointwise significance (pre + post both count)
+priority_df <- bind_rows(results) %>%
+  arrange(desc(pct_sig_pw), desc(peak_effect_sig))
+
+# ---- EXPLORATORY TIERS (pre and post both valued equally) ----
+priority_df <- priority_df %>%
+  mutate(
+    tier_exploratory = case_when(
+      pct_sig_pw >= 20                                      ~ "A - Strong",
+      pct_sig_pw >= 10                                      ~ "B - Moderate",
+      pct_sig_pw_pre >= 10 | pct_sig_pw_post >= 10         ~ "C - One-sided",   # strong in one half
+      pct_sig_pw > 0                                        ~ "D - Marginal",
+      TRUE                                                  ~ "E - Nothing"
+    ),
+    confirmed_by_joint = case_when(
+      pct_sig_joint >= 10 ~ "YES",
+      pct_sig_joint >   0 ~ "partial",
+      TRUE                ~ "no"
+    )
+  )
+
+# ---- PRINT SUMMARY ----
+cat("\n=============================================\n")
+cat("  EXPLORATORY PRIORITY RANKING (Pointwise CI)\n")
+cat("=============================================\n\n")
+
+cat("Tier counts:\n")
+print(table(priority_df$tier_exploratory))
+cat("\n")
+
+for (tier in c("A - Strong", "B - Moderate", "C - One-sided")) {
+  cat(paste0("\n--- ", tier, " ---\n\n"))
+  tier_df <- priority_df[priority_df$tier_exploratory == tier, ]
+  if (nrow(tier_df) > 0) {
+    print_cols <- c("event", "region", "sensor", "term", "direction", "sig_location",
+                    "pct_sig_pw_pre", "pct_sig_pw_post", "pct_sig_pw",
+                    "peak_effect_sig", "sig_time_range", "confirmed_by_joint", "png")
+    print(tibble::as_tibble(tier_df[, print_cols]), n = Inf, width = 300)
+  } else {
+    cat("  (none)\n")
+  }
+}
+
+cat("\n\nTier D (marginal):", sum(priority_df$tier_exploratory == "D - Marginal"), "plots\n")
+cat("Tier E (nothing):", sum(priority_df$tier_exploratory == "E - Nothing"), "plots — ignore these.\n")
+
+# ---- SAVE CSVs ----
+exploratory_csv <- file.path(rds_directory, "priority_1_exploratory.csv")
+write.csv(priority_df, file = exploratory_csv, row.names = FALSE)
+cat("\nExploratory ranking saved to:", exploratory_csv, "\n")
+
+pub_df <- priority_df %>%
+  filter(confirmed_by_joint %in% c("YES", "partial")) %>%
+  arrange(desc(pct_sig_joint), desc(peak_effect_sig))
+pub_csv <- file.path(rds_directory, "priority_2_publication.csv")
+write.csv(pub_df, file = pub_csv, row.names = FALSE)
+cat("Publication ranking saved to:", pub_csv, "\n")
+cat("  →", sum(pub_df$confirmed_by_joint == "YES"), "fully confirmed by joint CI\n")
+cat("  →", sum(pub_df$confirmed_by_joint == "partial"), "partially confirmed\n")
+
+# ---- COPY TOP RESULTS ----
+explore_folder <- file.path(plot_directory, "Explore_Top")
+if (!dir.exists(explore_folder)) dir.create(explore_folder)
+
+top_explore <- priority_df[priority_df$tier_exploratory %in% c("A - Strong", "B - Moderate"), ]
+copied <- 0
+for (i in seq_len(nrow(top_explore))) {
+  src <- file.path(plot_directory, top_explore$png[i])
+  dst <- file.path(explore_folder, top_explore$png[i])
+  if (file.exists(src) && !file.exists(dst)) { file.copy(src, dst); copied <- copied + 1 }
+}
+cat("Copied", copied, "exploratory top plots to:", explore_folder, "\n")
+
+pub_folder <- file.path(plot_directory, "Publication_Ready")
+if (!dir.exists(pub_folder)) dir.create(pub_folder)
+
+top_pub <- pub_df[pub_df$confirmed_by_joint == "YES", ]
+copied <- 0
+for (i in seq_len(nrow(top_pub))) {
+  src <- file.path(plot_directory, top_pub$png[i])
+  dst <- file.path(pub_folder, top_pub$png[i])
+  if (file.exists(src) && !file.exists(dst)) { file.copy(src, dst); copied <- copied + 1 }
+}
+cat("Copied", copied, "publication-ready plots to:", pub_folder, "\n")

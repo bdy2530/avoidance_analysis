@@ -21,7 +21,7 @@ cue_ids <- readRDS(file = glue("cue_ids_{Experiment}"))
 
 
 # File location -----------------------------------------------------------
-guppylocation <- r"(C:\Users\bdy2530\Downloads\GuPPy_everything\SynapseTanks\AA-combined_1-2-3)"
+guppylocation <- r"(C:\Users\bdy2530\Downloads\GuPPy_everything\SynapseTanks\AA-combined_1-2-3-4)"
 guppyfolders.dir <- list.dirs(guppylocation, recursive = TRUE)
 guppyfiles <- list.files(guppylocation, recursive = TRUE) %>% 
   as_tibble() %>% 

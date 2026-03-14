@@ -8,7 +8,7 @@ library(googlesheets4)
 gs4_deauth()
 
 Experiment <- "Active.Avoidance"
-guppylocation <- r"(C:\Users\bdy2530\Downloads\GuPPy_everything\SynapseTanks\AA-combined_1-2-3)"
+guppylocation <- r"(C:\Users\bdy2530\Downloads\GuPPy_everything\SynapseTanks\AA-combined_1-2-3-4)"
 
 raw_sampRate <- 1017.253
 min_ts <- -10
