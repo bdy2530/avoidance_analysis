@@ -10,6 +10,7 @@ library(purrr)
 library(ggprism)
 gs4_deauth()
 
+# Setup stuff -----------------------------------------------------------
 Experiment <- "Active.Avoidance"
 
 meta.data.link <- "https://docs.google.com/spreadsheets/d/1VPx4tm8clOViS7U8v_KSBg8S7oL2NFnLAkSvROfv-6o/edit?usp=sharing"
@@ -136,6 +137,7 @@ for(i in 1:nrow(event_structure_combinations)) {
 }
 
 
+
 # averaged across days; all structures, subjects - cue avoid escape ------------------
 # Master subject list (keeps consistent columns/order across all output files)
 all_subjects <- sort(unique(meta.data$Subject[!meta.data$Subject %in% c(9497, 9498, 9499, 9503, 9504, 9505)]))
@@ -143,7 +145,8 @@ all_subjects_str <- as.character(all_subjects)
 
 # Define event/structure combos
 event_structure_combinations <- expand.grid(
-  Event = c("cue_on", "avoid", "escape", "cue_on_avoid", "cue_on_escape"), 
+  #Event = c("cue_on", "avoid", "escape", "cue_on_avoid", "cue_on_escape"), 
+  Event = c("shock"),
   Structure = c("achDLS", "achDMS", "daDLS", "daDMS"), 
   stringsAsFactors = FALSE
 )
@@ -185,6 +188,114 @@ for(i in 1:nrow(event_structure_combinations)) {
   # Save
   write_csv(data_wide, glue("{event}_{structure}_avgAcrossDays_allperf.csv"))
 }
+
+
+# cross correlation between DA and ACh traces, all events, separated by region (DMS vs DLS) ------------------
+# Revised cross-correlation code with improvements:
+regions <- c("DMS", "DLS")
+events <- c("cue_on", "avoid", "escape", "cue_on_avoid", "cue_on_escape")
+all_subjects_str <- as.character(sort(unique(meta.data$Subject[!meta.data$Subject %in% c(9497, 9498, 9499, 9503, 9504, 9505)])))
+
+# Calculate the time step (dt) to convert lag indices to actual seconds
+dt <- diff(timeaxisTable$Time)[1] 
+
+# Define the biological window for cross-correlation
+t_min <- -6.0
+t_max <- 6.0
+max_lag_seconds <- 2.5 
+
+for(region in regions) {
+  for(event in events) {
+    
+    ach_struct <- paste0("ach", region)
+    da_struct <- paste0("da", region)
+    
+    # 1. Prepare data & Average per subject
+    data <- Zmeans_unpack %>%
+      filter(Event == event, Structure %in% c(ach_struct, da_struct)) %>%
+      filter(!is.na(`Paradigm.Day`)) %>%
+      group_by(Time, Timekey, Subject, Structure) %>%
+      summarise(zScore = mean(zScore, na.rm = TRUE), .groups = "drop")
+    
+    if(nrow(data) == 0) next
+    
+    # Pivot so DA and ACh are side-by-side
+    data_paired <- data %>%
+      pivot_wider(names_from = Structure, values_from = zScore)
+    
+    if(!all(c(ach_struct, da_struct) %in% names(data_paired))) next
+    
+    # Initialize output containers
+    ccf_traces <- list()
+    peak_lags <- data.frame(Subject = character(), Peak_R = numeric(), Optimal_Lag_sec = numeric(), stringsAsFactors = FALSE)
+    
+    for(subj in all_subjects_str) {
+      # Grab subject data AND apply the event-specific time window
+      subj_data <- data_paired %>% 
+        filter(Subject == subj, Time >= t_min, Time <= t_max) %>% 
+        arrange(Timekey)
+      
+      if(nrow(subj_data) == 0) next
+      
+      # Extract vectors and explicitly center them (demean)
+      x_raw <- scale(subj_data[[da_struct]], center = TRUE, scale = FALSE)
+      y_raw <- scale(subj_data[[ach_struct]], center = TRUE, scale = FALSE)
+      
+      # Handle missing timepoints without dropping the whole subject
+      valid_idx <- complete.cases(x_raw, y_raw)
+      x <- x_raw[valid_idx]
+      y <- y_raw[valid_idx]
+      
+      # Need enough data points to run a meaningful CCF
+      if(length(x) < 10) next
+      
+      # 2. Calculate Cross-Correlation
+      lag_limit <- round(max_lag_seconds / dt)
+      ccf_res <- ccf(x, y, lag.max = lag_limit, plot = FALSE)
+      
+      # Extract lags and correlations
+      lags_sec <- ccf_res$lag[,1,1] * dt
+      corrs <- ccf_res$acf[,1,1]
+      
+      # Save trace 
+      ccf_traces[[subj]] <- tibble(Lag_sec = lags_sec, !!subj := corrs)
+      
+      # 3. Find the peak based on ABSOLUTE maximum
+      max_idx <- which.max(abs(corrs))
+      
+      peak_lags <- rbind(peak_lags, data.frame(
+        Subject = subj, 
+        Peak_R = corrs[max_idx],           
+        Optimal_Lag_sec = lags_sec[max_idx] 
+      ))
+    }
+    
+    # Skip writing if NO subjects processed successfully
+    if(length(ccf_traces) == 0) next
+    
+    # ---------------------------------------------------------
+    # FORMATTING FOR PRISM
+    # ---------------------------------------------------------
+    
+    # A) Traces: Ensure all 27 subjects are columns in exact order
+    ccf_traces_wide <- reduce(ccf_traces, full_join, by = "Lag_sec") %>% arrange(Lag_sec)
+    missing_subj <- setdiff(all_subjects_str, names(ccf_traces_wide)[-1])
+    if(length(missing_subj) > 0) {
+      for(ms in missing_subj) ccf_traces_wide[[ms]] <- NA
+    }
+    ccf_traces_wide <- ccf_traces_wide %>% dplyr::select(Lag_sec, all_of(all_subjects_str))
+    
+    # B) Peak Lags: Ensure all 27 subjects are ROWS in exact order
+    master_subjects_df <- tibble(Subject = all_subjects_str)
+    peak_lags_complete <- left_join(master_subjects_df, peak_lags, by = "Subject")
+    
+    # Write outputs
+    write_csv(ccf_traces_wide, glue("CCF_Trace_{event}_{region}.csv"))
+    write_csv(peak_lags_complete, glue("CCF_PeakLags_{event}_{region}.csv"))
+  }
+}
+
+
 
 
 # all days, structures, separated subjects by performance - cue avoid escape ------------------
