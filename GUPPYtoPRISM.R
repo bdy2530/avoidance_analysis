@@ -27,7 +27,7 @@ Operant_metadata <- Operant_Data %>%
   dplyr::select(Subject, Date, Paradigm.Day) %>% 
   distinct() %>% 
   arrange(Subject, Paradigm.Day) %>% 
-  left_join(meta.data) %>% filter(Subject != 42) %>% filter(Subject != 44)
+  left_join(meta.data) 
 
 timeaxis_h5 <- readRDS(file = glue("{Experiment}_timeaxis_h5.Rds"))
 Zmeans <- readRDS(file = glue("{Experiment}_Operant_Data.Zmeans.Rds"))
@@ -75,136 +75,116 @@ Zmeans_unpack <- Zmeans_unpack %>%
   filter(is.finite(Time) & is.finite(zScore))
 
 # all days, structures, subjects - cue avoid escape ------------------
-#extract day 1-7 cue_on data averaged across all subjects for achDLS (each column is day 1-7, rows are time entries -10 to 10s)
-cue_on_achDLS <- Zmeans_unpack %>%
-  filter(Event == "cue_on" & Structure == "achDLS") %>%
-  group_by(Time, Timekey, `Paradigm.Day`) %>%
-  summarise(mean_zScore = mean(zScore, na.rm = TRUE)) %>%
-  pivot_wider(names_from = `Paradigm.Day`, values_from = mean_zScore) %>%
-  arrange(Timekey) %>% 
-  select(-Timekey)
-write_csv(cue_on_achDLS, "cue_on_achDLS.csv")
+#recursive script to generate csv files for all event/structure combinations of all subjects for each day (rows are time entries -10 to 10s, columns are SUBJECTS)
+# Get master lists
+all_subjects <- sort(unique(meta.data$Subject[!meta.data$Subject %in% c(9497, 9498, 9499, 9503, 9504, 9505)]))
+all_subjects_str <- as.character(all_subjects)
+days <- sort(unique(na.omit(Zmeans_unpack$Paradigm.Day)))
 
-#extract day 1-7 cue_on data averaged across all subjects for achDMS (each column is day 1-7, rows are time entries -10 to 10s)
-cue_on_achDMS <- Zmeans_unpack %>%
-  filter(Event == "cue_on" & Structure == "achDMS") %>%
-  group_by(Time, Timekey, `Paradigm.Day`) %>%
-  summarise(mean_zScore = mean(zScore, na.rm = TRUE)) %>%
-  pivot_wider(names_from = `Paradigm.Day`, values_from = mean_zScore) %>%
-  arrange(Timekey) %>% 
-  select(-Timekey)
-write_csv(cue_on_achDMS, "cue_on_achDMS.csv")
+# Create an ordered list of EXACTLY the columns we want in the final CSV:
+# e.g., "Day1_1", "Day1_2" ... "Day2_1", "Day2_2" ...
+# expand.grid varies the first argument fastest, meaning it cycles subjects inside each day
+expected_cols_df <- expand.grid(Subject = all_subjects_str, Day = days, stringsAsFactors = FALSE)
+expected_cols <- paste0("Day", expected_cols_df$Day, "_", expected_cols_df$Subject)
 
-#extract day 1-7 cue_on data averaged across all subjects for daDLS (each column is day 1-7, rows are time entries -10 to 10s)
-cue_on_daDLS <- Zmeans_unpack %>%
-  filter(Event == "cue_on" & Structure == "daDLS") %>%
-  group_by(Time, Timekey, `Paradigm.Day`) %>%
-  summarise(mean_zScore = mean(zScore, na.rm = TRUE)) %>%
-  pivot_wider(names_from = `Paradigm.Day`, values_from = mean_zScore) %>%
-  arrange(Timekey) %>% 
-  select(-Timekey)
-write_csv(cue_on_daDLS, "cue_on_daDLS.csv")
+# Define your combinations
+event_structure_combinations <- expand.grid(
+  #Event = c("cue_on", "avoid", "escape", "cue_on_avoid", "cue_on_escape"), 
+  Event = c("shock"),
+  Structure = c("achDLS", "achDMS", "daDLS", "daDMS"), 
+  stringsAsFactors = FALSE
+)
 
-#extract day 1-7 cue_on data averaged across all subjects for daDMS (each column is day 1-7, rows are time entries -10 to 10s)
-cue_on_daDMS <- Zmeans_unpack %>% 
-  filter(Event == "cue_on" & Structure == "daDMS") %>%
-  group_by(Time, Timekey, `Paradigm.Day`) %>%
-  summarise(mean_zScore = mean(zScore, na.rm = TRUE)) %>%
-  pivot_wider(names_from = `Paradigm.Day`, values_from = mean_zScore) %>%
-  arrange(Timekey) %>% 
-  select(-Timekey)
-write_csv(cue_on_daDMS, "cue_on_daDMS.csv")
-
-
-
-#extract day 1-7 avoid data averaged across all subjects for achDLS (each column is day 1-7, rows are time entries -10 to 10s)
-avoid_achDLS <- Zmeans_unpack %>%
-  filter(Event == "avoid" & Structure == "achDLS") %>%
-  group_by(Time, Timekey, `Paradigm.Day`) %>%
-  summarise(mean_zScore = mean(zScore, na.rm = TRUE)) %>%
-  pivot_wider(names_from = `Paradigm.Day`, values_from = mean_zScore) %>%
-  arrange(Timekey) %>% 
-  select(-Timekey)
-write_csv(avoid_achDLS, "avoid_achDLS.csv")
-
-#extract day 1-7 avoid data averaged across all subjects for achDMS (each column is day 1-7, rows are time entries -10 to 10s)
-avoid_achDMS <- Zmeans_unpack %>%
-  filter(Event == "avoid" & Structure == "achDMS") %>%
-  group_by(Time, Timekey, `Paradigm.Day`) %>%
-  summarise(mean_zScore = mean(zScore, na.rm = TRUE)) %>%
-  pivot_wider(names_from = `Paradigm.Day`, values_from = mean_zScore) %>% 
-  arrange(Timekey) %>%
-  select(-Timekey)
-write_csv(avoid_achDMS, "avoid_achDMS.csv")
-
-#extract day 1-7 avoid data averaged across all subjects for daDLS (each column is day 1-7, rows are time entries -10 to 10s)
-avoid_daDLS <- Zmeans_unpack %>%
-  filter(Event == "avoid" & Structure == "daDLS") %>%
-  group_by(Time, Timekey, `Paradigm.Day`) %>%
-  summarise(mean_zScore = mean(zScore, na.rm = TRUE)) %>%
-  pivot_wider(names_from = `Paradigm.Day`, values_from = mean_zScore) %>%
-  arrange(Timekey) %>%
-  select(-Timekey)
-write_csv(avoid_daDLS, "avoid_daDLS.csv")
-
-#extract day 1-7 avoid data averaged across all subjects for daDMS (each column is day 1-7, rows are time entries -10 to 10s)
-avoid_daDMS <- Zmeans_unpack %>%
-  filter(Event == "avoid" & Structure == "daDMS") %>%
-  group_by(Time, Timekey, `Paradigm.Day`) %>%
-  summarise(mean_zScore = mean(zScore, na.rm = TRUE)) %>%
-  pivot_wider(names_from = `Paradigm.Day`, values_from = mean_zScore) %>% 
-  arrange(Timekey) %>%
-  select(-Timekey)
-write_csv(avoid_daDMS, "avoid_daDMS.csv")
+# Loop through events and structures
+for(i in 1:nrow(event_structure_combinations)) {
+  event <- event_structure_combinations$Event[i]
+  structure <- event_structure_combinations$Structure[i]
+  
+  # Filter for the specific Event and Structure
+  data <- Zmeans_unpack %>%
+    filter(Event == event, Structure == structure) %>%
+    filter(!is.na(`Paradigm.Day`))
+  
+  # Skip if there's no data
+  if(nrow(data) == 0) next 
+  
+  # 1. Combine Day and Subject into a single column identifier
+  data_wide <- data %>%
+    mutate(Day_Subj = paste0("Day", `Paradigm.Day`, "_", Subject)) %>%
+    arrange(Timekey) %>%
+    dplyr::select(Time, Day_Subj, zScore) %>%  
+    # 2. Pivot so Time is the only row, and Day_Subj becomes the horizontal columns
+    pivot_wider(names_from = Day_Subj, values_from = zScore)
+  
+  # 3. Identify which Day-Subject combinations are completely missing
+  missing_cols <- setdiff(expected_cols, colnames(data_wide))
+  
+  # 4. Add the missing ones as empty (NA) columns
+  if(length(missing_cols) > 0) {
+    for(mc in missing_cols) {
+      data_wide[[mc]] <- NA
+    }
+  }
+  
+  # 5. Order the columns exactly: Time first, then Day 1 subjects, Day 2 subjects, etc.
+  data_wide <- data_wide %>%
+    dplyr::select(Time, all_of(expected_cols)) %>%
+    arrange(Time) # Ensure rows are sorted sequentially by time (-10s to 10s)
+  
+  # Write the CSV
+  write_csv(data_wide, glue("{event}_{structure}_allperf.csv"))
+}
 
 
+# averaged across days; all structures, subjects - cue avoid escape ------------------
+# Master subject list (keeps consistent columns/order across all output files)
+all_subjects <- sort(unique(meta.data$Subject[!meta.data$Subject %in% c(9497, 9498, 9499, 9503, 9504, 9505)]))
+all_subjects_str <- as.character(all_subjects)
 
-#extract day 1-7 escape data averaged across all subjects for achDLS (each column is day 1-7, rows are time entries -10 to 10s)
-escape_achDLS <- Zmeans_unpack %>%
-  filter(Event == "escape" & Structure == "achDLS") %>%
-  group_by(Time, Timekey, `Paradigm.Day`) %>%
-  summarise(mean_zScore = mean(zScore, na.rm = TRUE)) %>%
-  pivot_wider(names_from = `Paradigm.Day`, values_from = mean_zScore) %>%
-  arrange(Timekey) %>% 
-  select(-Timekey)
-write_csv(escape_achDLS, "escape_achDLS.csv")
+# Define event/structure combos
+event_structure_combinations <- expand.grid(
+  Event = c("cue_on", "avoid", "escape", "cue_on_avoid", "cue_on_escape"), 
+  Structure = c("achDLS", "achDMS", "daDLS", "daDMS"), 
+  stringsAsFactors = FALSE
+)
 
-#extract day 1-7 escape data averaged across all subjects for achDMS (each column is day 1-7, rows are time entries -10 to 10s)
-escape_achDMS <- Zmeans_unpack %>%
-  filter(Event == "escape" & Structure == "achDMS") %>%
-  group_by(Time, Timekey, `Paradigm.Day`) %>%
-  summarise(mean_zScore = mean(zScore, na.rm = TRUE)) %>%
-  pivot_wider(names_from = `Paradigm.Day`, values_from = mean_zScore) %>% 
-  arrange(Timekey) %>%
-  select(-Timekey)
-write_csv(escape_achDMS, "escape_achDMS.csv")
-
-#extract day 1-7 escape data averaged across all subjects for daDLS (each column is day 1-7, rows are time entries -10 to 10s)
-escape_daDLS <- Zmeans_unpack %>%
-  filter(Event == "escape" & Structure == "daDLS") %>%
-  group_by(Time, Timekey, `Paradigm.Day`) %>%
-  summarise(mean_zScore = mean(zScore, na.rm = TRUE)) %>%
-  pivot_wider(names_from = `Paradigm.Day`, values_from = mean_zScore) %>% 
-  arrange(Timekey) %>%
-  select(-Timekey)
-write_csv(escape_daDLS, "escape_daDLS.csv")
-
-#extract day 1-7 escape data averaged across all subjects for daDMS (each column is day 1-7, rows are time entries -10 to 10s)
-escape_daDMS <- Zmeans_unpack %>%
-  filter(Event == "escape" & Structure == "daDMS") %>%
-  group_by(Time, Timekey, `Paradigm.Day`) %>%
-  summarise(mean_zScore = mean(zScore, na.rm = TRUE)) %>%
-  pivot_wider(names_from = `Paradigm.Day`, values_from = mean_zScore) %>% 
-  arrange(Timekey) %>%
-  select(-Timekey)
-write_csv(escape_daDMS, "escape_daDMS.csv")
-
-
-
-
-
-
-
+for(i in 1:nrow(event_structure_combinations)) {
+  event <- event_structure_combinations$Event[i]
+  structure <- event_structure_combinations$Structure[i]
+  
+  # Filter relevant data
+  data <- Zmeans_unpack %>%
+    filter(Event == event, Structure == structure) %>%
+    filter(!is.na(`Paradigm.Day`))
+  
+  # Skip empty combinations
+  if(nrow(data) == 0) next
+  
+  # Average across days (and any repeated rows) per Subject x Time
+  data_avg <- data %>%
+    group_by(Time, Timekey, Subject) %>%
+    summarise(zScore = mean(zScore, na.rm = TRUE), .groups = "drop")
+  
+  # Pivot: rows = timepoints, columns = subjects
+  data_wide <- data_avg %>%
+    arrange(Timekey) %>%
+    dplyr::select(Time, Subject, zScore) %>%
+    pivot_wider(names_from = Subject, values_from = zScore)
+  
+  # Add missing subject columns as NA so every file has same subject columns
+  missing_subjects <- setdiff(all_subjects_str, colnames(data_wide))
+  if(length(missing_subjects) > 0) {
+    for(ms in missing_subjects) data_wide[[ms]] <- NA
+  }
+  
+  # Enforce exact column order
+  data_wide <- data_wide %>%
+    dplyr::select(Time, all_of(all_subjects_str)) %>%
+    arrange(Time)
+  
+  # Save
+  write_csv(data_wide, glue("{event}_{structure}_avgAcrossDays_allperf.csv"))
+}
 
 
 # all days, structures, separated subjects by performance - cue avoid escape ------------------

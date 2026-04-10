@@ -5,5 +5,5 @@
 6. Run “Active_Avoidance_Munge_CueIDs.R”
 7. Run “readGuppy_means_Active_Avoidance_CueOnTrialDefined.R” to specify each trial as an avoid or escape.
 8. Run “readGuppy_feats_Active_Avoidance.R” 
-9. Run “plot_Zmeans_ActiveAvoidance.R” to visualize the traces. 
-10. Run “Active_Avoidance_Behavior_Analysis.R” to visualize behavior data.
+9. Run “plot_Zmeans_ActiveAvoidance.R” to visualize the traces (or GUPPYtoPRISM.R to transfer to GraphPad Prism). 
+10. Run “Active_Avoidance_Behavior_Analysis.R” to visualize behavior data (or MEDtoPRISM.R to transfer to GraphPad Prism).

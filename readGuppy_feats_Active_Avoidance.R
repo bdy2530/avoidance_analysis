@@ -30,7 +30,7 @@ guppyfiles <- list.files(guppylocation, recursive = TRUE) %>%
 # Get file names ----------------------------------------------------------
 #get h5 files for extraction
 possibleEvents <- c("control_achDLS","control_achDMS","control_daDLS", "control_daDMS","signal_achDLS","signal_achDMS","signal_daDLS", "signal_daDMS",
-                    "reward_delivered" ,"cue_on","port_entry" ,"lever_left" ,"lever_right" ,"timer","opto_on" ,"shock_on" ,"cue_off" ,"cue_on","cross" ,"escape","avoid" ,"shock","timer", "SkCs")
+                    "reward_delivered" ,"cue_on","port_entry" ,"lever_left" ,"lever_right" ,"timer","opto_on" ,"shock_on" ,"cue_off" ,"cue_on","cross" ,"escape","avoid" ,"shock","timer")
 
 event.H5.Files <- guppyfiles %>% 
   filter(str_detect(files, str_c("(",paste(possibleEvents, collapse = "|"), ").*z_score.*\\.h.*5")),

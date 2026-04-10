@@ -30,7 +30,7 @@ Operant_metadata <- Operant_Data %>%
   select(Subject, Date, Paradigm.Day) %>% 
   distinct() %>% 
   arrange(Subject, Paradigm.Day) %>% 
-  left_join(meta.data) %>% filter(Subject != 42) %>% filter(Subject != 44)
+  left_join(meta.data) #%>% filter(Subject != 42) %>% filter(Subject != 44)
 
 Operant_Data <- Operant_Data %>% 
   mutate(Date = date(DateTime)) %>% 

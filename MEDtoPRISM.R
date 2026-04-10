@@ -56,3 +56,16 @@ percentavoid_persub_perday <- Operant_Data %>%
   pivot_wider(names_from = Subject, values_from = value) %>%
   select(-name) %>%
   write.csv(file = glue("{Experiment}_percentavoid_persub_perday.csv"), row.names = FALSE)
+
+# all cross latencies per subject per day
+# if event name contains "latency" AND does NOT contain "total", take all instances of that per subject per day averaged
+crosslat_persub_perday <- Operant_Data %>%
+  filter(str_detect(name, "latency"), !str_detect(name, "total")) %>%
+  group_by(Subject, Paradigm.Day) %>%
+  summarise(value = mean(value, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(
+    Subject = as.character(Subject)
+  ) %>%
+  pivot_wider(names_from = Subject, values_from = value) %>%
+  write.csv(file = glue("{Experiment}_crosslat_persub_perday.csv"), row.names = FALSE)
