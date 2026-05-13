@@ -145,8 +145,7 @@ all_subjects_str <- as.character(all_subjects)
 
 # Define event/structure combos
 event_structure_combinations <- expand.grid(
-  #Event = c("cue_on", "avoid", "escape", "cue_on_avoid", "cue_on_escape"), 
-  Event = c("shock"),
+  Event = c("cue_on", "avoid", "escape", "cue_on_avoid", "cue_on_escape", "shock"), 
   Structure = c("achDLS", "achDMS", "daDLS", "daDMS"), 
   stringsAsFactors = FALSE
 )
@@ -193,7 +192,7 @@ for(i in 1:nrow(event_structure_combinations)) {
 # cross correlation between DA and ACh traces, all events, separated by region (DMS vs DLS) ------------------
 # Revised cross-correlation code with improvements:
 regions <- c("DMS", "DLS")
-events <- c("cue_on", "avoid", "escape", "cue_on_avoid", "cue_on_escape")
+events <- c("cue_on", "avoid", "escape", "cue_on_avoid", "cue_on_escape", "shock")
 all_subjects_str <- as.character(sort(unique(meta.data$Subject[!meta.data$Subject %in% c(9497, 9498, 9499, 9503, 9504, 9505)])))
 
 # Calculate the time step (dt) to convert lag indices to actual seconds
@@ -322,19 +321,10 @@ perc_avoid <- Operant_Data %>%
   pivot_wider(names_from = name, values_from = value) %>%
   left_join(subject_group %>% select(Subject, performance_group), by = "Subject")
 
-#extract day 1-7 cue_on data averaged across lower performance groups for achDLS (each column is day 1-7, rows are time entries -10 to 10s)
-cue_on_achDLS_lowperf <- Zmeans_unpack %>%
-  left_join(subject_group %>% select(Subject, performance_group), by = "Subject") %>%
-  filter(Event == "cue_on" & Structure == "achDLS" & performance_group == "Lower") %>%
-  group_by(Time, Timekey, `Paradigm.Day`) %>%
-  summarise(mean_zScore = mean(zScore, na.rm = TRUE)) %>%
-  pivot_wider(names_from = `Paradigm.Day`, values_from = mean_zScore) %>%
-  arrange(Timekey) %>% 
-  select(-Timekey)
-write_csv(cue_on_achDLS_lowperf, "cue_on_achDLS_lowperf.csv")
 
 # iterative code for all event/structure combinations - low vs high performance groups
-event_structure_combinations <- expand.grid(Event = c("cue_on", "avoid", "escape"), Structure = c("achDLS", "achDMS", "daDLS", "daDMS"), stringsAsFactors = FALSE) 
+event_structure_combinations <- expand.grid(Event = c("cue_on", "avoid", "escape", "cue_on_avoid", "cue_on_escape", "shock"), Structure = c("achDLS", "achDMS", "daDLS", "daDMS"), stringsAsFactors = FALSE) 
+
 for(i in 1:nrow(event_structure_combinations)) {
   event <- event_structure_combinations$Event[i]
   structure <- event_structure_combinations$Structure[i]
