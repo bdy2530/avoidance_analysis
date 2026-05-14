@@ -73,8 +73,8 @@ fwrite(velocity_df, "cleaned_velocity_data.csv")
 
 
 # freezing calculations/criteria ------
-THRESH_MID <- 2 # cm/s
-THRESH_NOSE <- 7 # cm/s (adjust if it feels too loose, gaby did ~6.6)
+THRESH_MID <- 3 # cm/s
+THRESH_NOSE <- 6.6 # cm/s (adjust if it feels too loose, gaby did ~6.6)
 
 velocity_df <- velocity_df %>%
   distinct(VIDEO, Time_sec, .keep_all = TRUE) %>%
@@ -185,7 +185,7 @@ freezing_plot <- ggplot(group_daily_freezing, aes(x = Day, y = Mean_Freezing, co
   geom_errorbar(aes(ymin = Mean_Freezing - SEM, ymax = Mean_Freezing + SEM), width = 0.2, linewidth = 0.8) +
   scale_color_manual(values = c("Cue" = "#D55E00", "ITI" = "#0072B2")) + # Colorblind-friendly colors
   scale_x_continuous(breaks = min(group_daily_freezing$Day):max(group_daily_freezing$Day)) +
-  scale_y_continuous(limits = c(0, 60), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0, 100), expand = c(0, 0)) +
   labs(
     title = "Day-by-Day Freezing: Cue vs ITI",
     x = "Training Day",
