@@ -2,8 +2,8 @@
 library(data.table)
 library(tidyverse)
 
-file_path_mid <- "C:/Users/bdy2530/Desktop/simba-activeavoidance-proj/activeavoidance/project_folder/logs/Time_bins_0.1s_movement_results_20260512153226.csv"
-file_path_nose <- "C:/Users/bdy2530/Desktop/simba-activeavoidance-proj/activeavoidance/project_folder/logs/Time_bins_0.1s_movement_results_20260513123031.csv"
+file_path_mid <- "C:/Users/bdy2530/Desktop/simba-activeavoidance-proj/activeavoidance/project_folder/logs/Time_bins_0.1s_movement_results_20260514114356.csv"
+file_path_nose <- "C:/Users/bdy2530/Desktop/simba-activeavoidance-proj/activeavoidance/project_folder/logs/Time_bins_0.1s_movement_results_20260514114725.csv"
 
 process_simba_csv <- function(path, value_col_name) {
   dt <- fread(path)
@@ -73,8 +73,8 @@ fwrite(velocity_df, "cleaned_velocity_data.csv")
 
 
 # freezing calculations/criteria ------
-THRESH_MID <- 3 # cm/s
-THRESH_NOSE <- 6.6 # cm/s (adjust if it feels too loose, gaby did ~6.6)
+THRESH_MID <- 2 # cm/s
+THRESH_NOSE <- 4 # cm/s (adjust if it feels too loose, gaby did ~6.6)
 
 velocity_df <- velocity_df %>%
   distinct(VIDEO, Time_sec, .keep_all = TRUE) %>%

@@ -69,3 +69,5 @@ crosslat_persub_perday <- Operant_Data %>%
   ) %>%
   pivot_wider(names_from = Subject, values_from = value) %>%
   write.csv(file = glue("{Experiment}_crosslat_persub_perday.csv"), row.names = FALSE)
+
+#perc avoid but split into 1 vs 2 implant mice

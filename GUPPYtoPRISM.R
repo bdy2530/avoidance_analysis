@@ -75,13 +75,12 @@ non_finite_metadata <- non_finite_rows %>%
 Zmeans_unpack <- Zmeans_unpack %>%
   filter(is.finite(Time) & is.finite(zScore))
 
-# all days, structures, subjects - cue avoid escape ------------------
-#recursive script to generate csv files for all event/structure combinations of all subjects for each day (rows are time entries -10 to 10s, columns are SUBJECTS)
-# Get master lists
 all_subjects <- sort(unique(meta.data$Subject[!meta.data$Subject %in% c(9497, 9498, 9499, 9503, 9504, 9505)]))
 all_subjects_str <- as.character(all_subjects)
 days <- sort(unique(na.omit(Zmeans_unpack$Paradigm.Day)))
 
+# all days, structures, subjects - cue avoid escape ------------------
+#recursive script to generate csv files for all event/structure combinations of all subjects for each day (rows are time entries -10 to 10s, columns are SUBJECTS)
 # Create an ordered list of EXACTLY the columns we want in the final CSV:
 # e.g., "Day1_1", "Day1_2" ... "Day2_1", "Day2_2" ...
 # expand.grid varies the first argument fastest, meaning it cycles subjects inside each day
@@ -356,13 +355,61 @@ for(i in 1:nrow(event_structure_combinations)) {
 
 
 
+# days split into ordinal phases (early vs late), all structures, subjects - cue-avoid cue-escape avoid shock escape ------------------
+events_ordinal <- c("cue_on_avoid", "cue_on_escape", "avoid", "shock", "escape")
+event_structure_combinations <- expand.grid(
+  Event = events_ordinal, 
+  Structure = c("achDLS", "achDMS", "daDLS", "daDMS"), 
+  stringsAsFactors = FALSE
+)
 
-
-
-
-
-
-
-
-
-
+expected_cols_df <- expand.grid(Subject = all_subjects_str, Phase = c("Early", "Late"), stringsAsFactors = FALSE)
+expected_cols <- paste0(expected_cols_df$Phase, "_", expected_cols_df$Subject)
+for(i in 1:nrow(event_structure_combinations)) {
+  event <- event_structure_combinations$Event[i]
+  structure <- event_structure_combinations$Structure[i]
+  
+  # Filter relevant data
+  data <- Zmeans_unpack %>%
+    filter(Event == event, Structure == structure) %>%
+    filter(!is.na(`Paradigm.Day`))
+  
+  # Skip empty combinations
+  if(nrow(data) == 0) next
+  
+  # Assign phase and average per subject per phase across Time
+  data_phase <- data %>%
+    mutate(Phase = case_when(
+      `Paradigm.Day` %in% 1:3 ~ "Early",
+      `Paradigm.Day` %in% 4:7 ~ "Late"
+    )) %>%
+    filter(!is.na(Phase)) %>% # Drop any days that fall outside 1-7
+    group_by(Time, Timekey, Subject, Phase) %>%
+    summarise(mean_zScore = mean(zScore, na.rm = TRUE), .groups = "drop")
+  
+  # Skip if empty after phase assignment
+  if(nrow(data_phase) == 0) next
+  
+  # Pivot so Time is the row, Phase_Subject are columns
+  data_wide <- data_phase %>%
+    mutate(Phase_Subj = paste0(Phase, "_", Subject)) %>%
+    arrange(Timekey) %>%
+    dplyr::select(Time, Phase_Subj, mean_zScore) %>%
+    pivot_wider(names_from = Phase_Subj, values_from = mean_zScore)
+  
+  # Add missing Subject/Phase combinations as NA
+  missing_cols <- setdiff(expected_cols, colnames(data_wide))
+  if(length(missing_cols) > 0) {
+    for(mc in missing_cols) {
+      data_wide[[mc]] <- NA
+    }
+  }
+  
+  # Order columns exactly: Time first, then Early subjects, then Late subjects
+  data_wide <- data_wide %>%
+    dplyr::select(Time, all_of(expected_cols)) %>%
+    arrange(Time)
+  
+  # Write the CSV
+  write_csv(data_wide, glue("{event}_{structure}_ordinalPhases_allperf.csv"))
+}
